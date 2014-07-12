@@ -1,474 +1,387 @@
 #include <time.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <stdbool.h>
-#include <inttypes.h>
 #include "prototypes.h"
 
+int colors_tab[] = {FOREGROUND_BLUE|FOREGROUND_INTENSITY,
+                    FOREGROUND_GREEN|FOREGROUND_INTENSITY,
+                    FOREGROUND_RED|FOREGROUND_INTENSITY,
+                    FOREGROUND_BLUE|FOREGROUND_GREEN,
+                    FOREGROUND_BLUE|FOREGROUND_RED|FOREGROUND_INTENSITY,
+                    FOREGROUND_GREEN|FOREGROUND_BLUE|FOREGROUND_INTENSITY,
+                    FOREGROUND_RED,
+                    FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_INTENSITY};
+const int vx[] = {-1, -1, -1, 0, 0, +1, +1, +1},
+          vy[] = {-1, 0, +1, -1, +1, -1, 0, +1};
 
-int main(void){
+int main(void) {
+    struct map map;
+    int i;
+
     srand((unsigned int)time(NULL));
-    map_S   map;
+    printf("** zDemineur **\n\n");
+    if(!load(&map))
+        fill_map(&map);
 
-    printf("** zDemineur (niveau 1) **\n\n");
-    if(charger(&map) == false)
-        fillmap(&map);
-    mapGen(&map);
-    while(gagne(&map) == false) {
+    map_gen(&map);
+
+    while(!iswon(&map)) {
 #if defined (_WIN32) || defined (_WIN64)
         system("cls");
 #else
-        printf("________________________________________________________________________________\n");
+        printf("________________________________________________________\n");
 #endif
-        affiche_map(&map);
+        display_map(&map);
         action(&map);
     }
-    printf("\nVous avez gagn%c ! Voici la carte enti%crement d%ccouverte :\n",130,138,130);
-    affiche_map_Debug(&map);
+    printf("\nYou won ! Here is the completely visible map :\n");
+    display_map_debug(&map);
 
-    for(uint k = 0;k < map.lines;++k)
-        free(map.Map[k]);
+    for(i = 0; i < map.rows; ++i)
+        free(map.Map[i]);
 
     free(map.Map);
     return 0;
 }
 
-bool alloc(map_S *map){
-    map->Map = malloc(map->lines * sizeof(uint *));
+bool alloc(struct map *map) {
+    int i;
+    map->Map = malloc(map->rows * sizeof(*map->Map));
     if(map == NULL)
         exit(1);
 
-    for(uint k = 0;k < map->lines;++k) {
-        map->Map[k]=malloc(map->col * sizeof(uint));
-        if(map->Map[k] == NULL)
+    for(i = 0; i < map->rows; ++i) {
+        map->Map[i] = malloc(map->columns * sizeof(**map->Map));
+        if(map->Map[i] == NULL)
             return false;
     }
     return true;
 }
 
-void mapGen(map_S *map) {
-    for(uint i = 0; i < map->lines; ++i)
-        for(uint j = 0; j < map->col; ++j)
-            map->Map[i][j].valeur = VIDE;
+void map_gen(struct map *map) {
+    int i, j,
+         x, y;
+    for(i = 0; i < map->rows; ++i)
+        for(j = 0; j < map->columns; ++j)
+            map->Map[i][j].value = EMPTY;
 
-    for(uint i = 0; i < map->mines; ++i) {
-        uint    x,
-                y;
+    for(i = 0; i < map->mines; ++i) {
         do {
-            x = (uint)rand() % map->lines;
-            y = (uint)rand() % map->col;
-        } while(map->Map[x][y].valeur == MINE);
+            x = (int)rand() % map->rows;
+            y = (int)rand() % map->columns;
+        } while(map->Map[x][y].value == MINE);
 
-        /*map->Map[x][y].valeur = MINE;*/
-        ajoutermine(map,x,y);
+        add_mine(map, x, y);
     }
-    for(uint i = 0; i < map->lines; ++i)
-        for(uint j = 0; j < map->col; ++j)
-            if(map->Map[i][j].valeur != MINE && map->Map[i][j].valeur != ' ')
-                map->Map[i][j].valeur += 16;
+    for(i = 0; i < map->rows; ++i)
+        for(j = 0; j < map->columns; ++j)
+            if(map->Map[i][j].value != MINE && map->Map[i][j].value != ' ')
+                map->Map[i][j].value += '0' - EMPTY;
 }
 
-void affiche_map(const map_S *map) {
+void display_map(const struct map *map) {
+    int i, j, z;
     printf("\n   ");
-    for(uint i = 0; i < map->col; ++i)
-        if(i < 10)
-            printf("  %d ",i);
-        else
-            printf(" %d ",i);
+    for(i = 0; i < map->columns; ++i)
+        printf(" %2d ", i);
 
     printf("\n   +");
 
-    for(uint i = 0; i < map->col; ++i)
+    for(i = 0; i < map->columns; ++i)
         printf("---+");
     putchar('\n');
 
-    for(uint i = 0; i < map->lines; ++i) {
-        printf("%2d |",i);
-
-        for(uint j = 0; j < map->col; ++j) {
-            if(map->Map[i][j].flagged == false) {
-
-                if(map->Map[i][j].visible == false) {
-#if defined _WIN32 || defined _WIN64
-                    Color(FOREGROUND_INTENSITY|FOREGROUND_GREEN|BACKGROUND_BLUE);
-                    printf(" ? ");
-                    ResetColor();
-                    putchar('|');
-#else
-                    printf(" ? |");
-#endif
-                } else {
-#if defined _WIN32 || defined _WIN64
-                    if(map->Map[i][j].valeur == '1')
-                        Color(FOREGROUND_BLUE|FOREGROUND_INTENSITY);
-                    else if(map->Map[i][j].valeur == '2')
-                        Color(FOREGROUND_GREEN|FOREGROUND_INTENSITY);
-                    else if(map->Map[i][j].valeur == '3')
-                        Color(FOREGROUND_RED|FOREGROUND_INTENSITY);
-                    else if(map->Map[i][j].valeur == '4')
-                        Color(FOREGROUND_BLUE|FOREGROUND_GREEN);
-                    else if(map->Map[i][j].valeur == '5')
-                        Color(FOREGROUND_BLUE|FOREGROUND_RED|FOREGROUND_INTENSITY);
-                    else if(map->Map[i][j].valeur == '6')
-                        Color(FOREGROUND_GREEN|FOREGROUND_BLUE|FOREGROUND_INTENSITY);
-                    else if(map->Map[i][j].valeur == '7')
-                        Color(FOREGROUND_RED);
-                    else if(map->Map[i][j].valeur == '8')
-                        Color(FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_INTENSITY);
-                    printf(" %c ",map->Map[i][j].valeur);
-                    ResetColor();
-                    putchar('|');
-#else
-                    printf(" %c |",map->Map[i][j].valeur);
-#endif
-                }
-
-            }
-            else {
-#if defined _WIN32 || defined _WIN64
-                Color(FOREGROUND_RED|FOREGROUND_GREEN|FOREGROUND_INTENSITY);
-                printf(" F ");
-                ResetColor();
+    for(i = 0; i < map->rows; ++i) {
+        printf("%2d |", i);
+        for(j = 0; j < map->columns; ++j) {
+#if defined WIN
+            if(!map->Map[i][j].flagged && !map->Map[i][j].visible) {
+                color(FOREGROUND_INTENSITY|FOREGROUND_GREEN|BACKGROUND_BLUE);
+                printf(" ? ");
+                reset_color();
                 putchar('|');
-#else
-                printf(" F |");
-#endif
+            } else {
+                color(colors_tab[map->Map[i][j].value - '1']);
+                printf(" %c ", map->Map[i][j].value);
+                reset_color();
+                putchar('|');
             }
+#else
+            if(map->Map[i][j].value == MINE)
+                printf(" ? |");
+            else
+                printf(" %c |", map->Map[i][j].value);
+#endif
+            /*}*/
         }
 
         putchar('\n');
         printf("   +");
 
-        for(uint z = 0; z < map->col; ++z)
+        for(z = 0; z < map->columns; ++z)
             printf("---+");
         putchar('\n');
     }
     printf("\n\n");
 }
 
-char numb_adj_mines(const map_S *map, uint i, uint j) {
-    uint     number=0;
-
-    if(i > 0 && j > 0 && map->Map[i-1][j-1].valeur == MINE)
-        number++;
-    if(i > 0 && map->Map[i-1][j].valeur == MINE)
-        number++;
-    if(i > 0 && j < map->col-1 && map->Map[i-1][j+1].valeur == MINE)
-        number++;
-    if(j > 0 && map->Map[i][j-1].valeur == MINE)
-        number++;
-    if(j < map->col-1 && map->Map[i][j+1].valeur == MINE)
-        number++;
-    if(i < map->lines-1 && j > 0 && map->Map[i+1][j-1].valeur == MINE)
-        number++;
-    if(i < map->lines-1 && map->Map[i+1][j].valeur == MINE)
-        number++;
-    if(i < map->lines-1 && j < map->col-1 && map->Map[i+1][j+1].valeur == MINE)
-        number++;
-
-
-    if(number)
-        return (char)('0' + number);
-    else
-        return ' ';
-}
-
-void fillmap(map_S *map) {
-    printf("param%ctres :\n\tlignes : ",138);
-    scanf("%u",&map->lines);
-    printf("\tcolonnes : ");
-    scanf("%u",&map->col);
+void fill_map(struct map *map) {
+    int i, j;
+    printf("parameters :\n\trows : ");
+    scanf("%d", &map->rows);
+    printf("\tcolumns : ");
+    scanf("%d", &map->columns);
     printf("\tmines : ");
-    scanf("%u",&map->mines);
+    scanf("%d", &map->mines);
 
-    if(alloc(map) == false) {
-        printf("Erreur : La carte n'a pas pu %ctre gener%ce !",136,130);
+    if(!alloc(map)) {
+        printf("Error : Unable to generate the map\n");
         getchar();
         exit(2);
     }
 
-    for(uint i = 0; i < map->lines; ++i) {
-        for(uint j = 0; j < map->col; ++j) {
-            map->Map[i][j].visible = false;
-            map->Map[i][j].flagged = false;
-        }
-    }
-    map->drapeaux = 0;
+    for(i = 0; i < map->rows; ++i)
+        for(j = 0; j < map->columns; ++j)
+            map->Map[i][j].visible = map->Map[i][j].flagged = false;
+    map->flags = 0;
 }
 
-void action(map_S *map) {
+void action(struct map *map) {
     int tmp;
-    printf("Que voulez-vous faire ?\n\t1) Abandonner\n\t2) Poser un drapeau\n\t3) Enlever un drapeau\n\t4) Explorer une case\n\t5) Quitter\n\t");
-    scanf("%d",&tmp);
+    printf("What do you want to do ?\n"
+               "\t1) Abandon\n"
+               "\t2) Set a flag\n"
+               "\t3) Erase a flag\n"
+               "\t4) Explore a cell\n"
+               "\t5) Quit\n\t");
+    scanf("%d", &tmp);
     if(tmp == 1)
-        Abandon();
+        abandon();
     else if(tmp == 2)
-        Flag(map);
+        flag(map);
     else if(tmp == 3)
-        Unflag(map);
+        unflag(map);
     else if(tmp == 4)
-        Explore(map);
+        explore(map);
     else if(tmp == 5)
-        Quit(map);
+        quit(map);
 #if defined CHEAT_ALLOWED
     else if(tmp == 16012006)
-        affiche_map_Debug(map);
+        display_map_debug(map);
 #endif
 }
 
-void Abandon(void) {
-    printf("Merci d'avoir jou%c. Dommage d'avoir abandonn%c...",130,130);
+void abandon(void) {
+    printf("Thanks for playing.");
     getchar();
     exit(EXIT_SUCCESS);
 }
 
-void Explore(map_S *map) {
-    Coordonnees_S coord;
-    getCoord(&coord,map);
+void explore(struct map *map) {
+    struct coord coord;
+    get_coord(&coord, map);
 
     if(map->Map[coord.x][coord.y].flagged == true)
-        printf("Cette case a un drapeau...\n");
-    else
-        if(map->Map[coord.x][coord.y].valeur == MINE) {
-            printf("\n\tIl y a une mine ici... Dommage...\n\n");
-            affiche_map_Debug(map);
+        printf("This cell has a flag...\n");
+    else if(map->Map[coord.x][coord.y].value == MINE) {
+            printf("\n\tThis cell is mined... Too bad...\n\n");
+            display_map_debug(map);
             getchar();
             exit(EXIT_SUCCESS);
-        }
-    else
-        Explore2(map,coord.x,coord.y);
+    } else
+        explore_cell(map, coord.x, coord.y);
 }
 
-void Explore2(map_S *map, uint x, uint y) {
-    if(map->Map[x][y].flagged == false) {
-        if(map->Map[x][y].visible == false) {
-            map->Map[x][y].visible = true;
-            if(map->Map[x][y].valeur == VIDE) {
-                if(x > 0 && y > 0)
-                    if(map->Map[x-1][y-1].valeur != VIDE)
-                        Explore2(map,x-1,y-1);
-                if(x > 0)
-                    Explore2(map,x-1,y);
-                if(x > 0 && y < map->col - 1)
-                    if(map->Map[x-1][y+1].valeur != VIDE)
-                        Explore2(map,x-1,y+1);
-                if(y > 0)
-                    Explore2(map,x,y-1);
-                if(y < map->col - 1)
-                    Explore2(map,x,y+1);
-                if(x < map->lines - 1 && y > 0)
-                    if(map->Map[x+1][y-1].valeur != VIDE)
-                        Explore2(map,x+1,y-1);
-                if(x < map->lines - 1)
-                    Explore2(map,x+1,y);
-                if(x < map->lines - 1 && y < map->col - 1)
-                    if(map->Map[x+1][y+1].valeur != VIDE)
-                        Explore2(map,x+1,y+1);
-            }
-        }
+void explore_cell(struct map *map, int x, int y) {
+    int i;
+    if(!map->Map[x][y].flagged && !map->Map[x][y].visible) {
+        map->Map[x][y].visible = true;
+        if(map->Map[x][y].value == EMPTY)
+            for(i = 0; i < 8; ++i)
+                if((x+vx[i] >= 0 && x+vx[i] < map->rows)
+                && (y+vy[i] >= 0 && y+vy[i] < map->columns))
+                    explore_cell(map, x+vx[i], y+vy[i]);
     }
 }
 
-void Flag(map_S *map) {
-    Coordonnees_S coord;
-    getCoord(&coord,map);
-    if(map->Map[coord.x][coord.y].visible == false)
+void flag(struct map *map) {
+    struct coord coord;
+    get_coord(&coord, map);
+    if(!map->Map[coord.x][coord.y].visible)
         map->Map[coord.x][coord.y].flagged = true;
-    if(map->Map[coord.x][coord.y].valeur == MINE)
-        map->drapeaux++;
+    if(map->Map[coord.x][coord.y].value == MINE)
+        ++map->flags;
 
 }
 
-void Unflag(map_S *map) {
-    Coordonnees_S coord;
-    getCoord(&coord,map);
+void unflag(struct map *map) {
+    struct coord coord;
+    get_coord(&coord, map);
 
     map->Map[coord.x][coord.y].flagged = false;
-    if(map->Map[coord.x][coord.y].valeur == MINE)
-        map->drapeaux++;
+    if(map->Map[coord.x][coord.y].value == MINE)
+        --map->flags;
 }
 
-void getCoord(Coordonnees_S *coord, const map_S *map) {
-    printf("Entrez x : ");
-    scanf("%d",&coord->y);
-    printf("Entrez y : ");
-    scanf("%d",&coord->x);
-    if(coord->x > map->lines - 1)
-        getCoord(coord,map);
-    if(coord->y > map->col - 1)
-        getCoord(coord,map);
+void get_coord(struct coord *coord, const struct map *map) {
+    printf("Enter x : ");
+    scanf("%d", &coord->y);
+    printf("Enter y : ");
+    scanf("%d", &coord->x);
+    if(coord->x > map->rows - 1)
+        get_coord(coord, map);
+    if(coord->y > map->columns - 1)
+        get_coord(coord, map);
 }
 
-void affiche_map_Debug(const map_S *map) {
+void display_map_debug(const struct map *map) {
+    int i, j, z;
     putchar('+');
-    for(uint8_t i = 0; i < map->col; ++i)
+    for(i = 0; i < map->columns; ++i)
         printf("---+");
     putchar('\n');
-    for(uint8_t i = 0; i < map->lines; ++i) {
+    for(i = 0; i < map->rows; ++i) {
         putchar('|');
-        for(uint8_t j = 0; j < map->col; ++j) {
-            if(map->Map[i][j].valeur == MINE) {
-#if defined _WIN32 ||defined _WIN64
-                Color(BACKGROUND_GREEN|FOREGROUND_RED|FOREGROUND_INTENSITY);
+        for(j = 0; j < map->columns; ++j) {
+#if defined WIN
+            if(map->Map[i][j].value == MINE) {
+                color(BACKGROUND_GREEN|FOREGROUND_RED|FOREGROUND_INTENSITY);
                 printf(" X ");
-                ResetColor();
+                reset_color();
                 putchar('|');
+            } else {
+                color(colors_tab[map->Map[i][j].value - '1']);
+                printf(" %c ", map->Map[i][j].value);
+                reset_color();
+                putchar('|');
+            }
 #else
+            if(map->Map[i][j].value == MINE)
                 printf(" X |");
+            else
+                printf(" %c |", map->Map[i][j].value);
 #endif
-            }
-            else {
-#if defined _WIN32 || defined _WIN64
-                if(map->Map[i][j].valeur == '1')
-                    Color(FOREGROUND_BLUE |FOREGROUND_INTENSITY);
-                else if(map->Map[i][j].valeur == '2')
-                    Color(FOREGROUND_GREEN|FOREGROUND_INTENSITY);
-                else if(map->Map[i][j].valeur == '3')
-                    Color(FOREGROUND_RED|FOREGROUND_INTENSITY);
-                else if(map->Map[i][j].valeur == '4')
-                    Color(FOREGROUND_BLUE|FOREGROUND_GREEN);
-                else if(map->Map[i][j].valeur == '5')
-                    Color(FOREGROUND_BLUE|FOREGROUND_RED|FOREGROUND_INTENSITY);
-                else if(map->Map[i][j].valeur == '6')
-                    Color(FOREGROUND_GREEN|FOREGROUND_BLUE|FOREGROUND_INTENSITY);
-                else if(map->Map[i][j].valeur == '7')
-                    Color(FOREGROUND_RED);
-                else if(map->Map[i][j].valeur == '8')
-                    Color(FOREGROUND_BLUE|FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_INTENSITY);
-                printf(" %c ",map->Map[i][j].valeur);
-                ResetColor();
-                putchar('|');
-#else
-                    printf(" %c |"n,map->Map[i][j].valeur);
-#endif
-            }
         }
         putchar('\n');
         putchar('+');
-        for(uint8_t z = 0; z < map->col; ++z)
+        for(z = 0; z < map->columns; ++z)
             printf("---+");
         putchar('\n');
     }
-    clean();
+    purge_buffer();
     printf("\n");
 }
-#if defined _WIN32 || defined _WIN64
-void Color(int flags) {
-    HANDLE H=GetStdHandle(STD_OUTPUT_HANDLE);
-    SetConsoleTextAttribute(H,(WORD)flags);
+
+#if defined WIN
+
+void color(int flags) {
+    HANDLE H = GetStdHandle(STD_OUTPUT_HANDLE);
+    SetConsoleTextAttribute(H, (WORD)flags);
 }
 
-void ResetColor(void) {
-    Color(FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_RED);
-}
+void reset_color(void) { color(FOREGROUND_BLUE|FOREGROUND_GREEN|FOREGROUND_RED); }
+
 #endif
 
-bool gagne(const map_S *map) {
+bool iswon(const struct map *map) {
     bool ret = false;
-    if(map->drapeaux == map->mines) {
+    int i, j;
+    if(map->flags == map->mines) {
         ret = true;
-        for(uint i = 0 ; i < map->lines; ++i)
-            for(uint j = 0; j < map-> col; ++j)
-                if(map->Map[i][j].valeur == MINE)
-                    if(map->Map[i][j].flagged == false)
-                        ret = false;
+        for(i = 0 ; i < map->rows; ++i)
+            for(j = 0; j < map-> columns; ++j)
+                if(map->Map[i][j].value == MINE && !map->Map[i][j].flagged)
+                    ret = false;
     }
     else if(nb_unvisible(map) == map->mines)
         ret = true;
     return ret;
 }
 
-void ajoutermine(map_S *map, uint x, uint y) {
-    map->Map[x][y].valeur = MINE;
-    if(x > 0 && y > 0 && map->Map[x-1][y-1].valeur != MINE)
-        map->Map[x-1][y-1].valeur++;
-    if(x > 0 && map->Map[x-1][y].valeur != MINE)
-        map->Map[x-1][y].valeur++;
-    if(x > 0 && y < map->col - 1 && map->Map[x-1][y+1].valeur != MINE)
-        map->Map[x-1][y+1].valeur++;
-    if(y > 0 && map->Map[x][y-1].valeur != MINE)
-        map->Map[x][y-1].valeur++;
-    if(y < map->col - 1 && map->Map[x][y+1].valeur != MINE)
-        map->Map[x][y+1].valeur++;
-    if(x < map->lines - 1 && y > 0 && map->Map[x+1][y-1].valeur != MINE)
-        map->Map[x+1][y-1].valeur++;
-    if(x < map->lines - 1 && map->Map[x+1][y].valeur != MINE)
-        map->Map[x+1][y].valeur++;
-    if(x < map->lines - 1 && y < map->col - 1 && map->Map[x+1][y+1].valeur != MINE)
-        map->Map[x+1][y+1].valeur++;
+void add_mine(struct map *map, int x, int y) {
+    int i = 0;
+
+    map->Map[x][y].value = MINE;
+    for(i = 0; i < 8; ++i)
+        if((x+vx[i] >= 0 && x+vx[i] < map->rows)
+        && (y+vy[i] >= 0 && y+vy[i] < map->columns)
+        && map->Map[x+vx[i]][y+vy[i]].value != MINE)
+            ++map->Map[x+vx[i]][y+vy[i]].value;
 }
 
-void Quit(const map_S *map) {
-    int save;
-    printf("\n\tVoulez-vous sauvegarder ? (1/0)\n\t");
-    scanf("%d",&save);
-    if(save == 1)
-        Sauvegarder(map);
-    printf("\n\t\t\tAu revoir");
+void quit(const struct map *map) {
+    int bool_save;
+    printf("\n\tDo you want to save ? (1/0)\n\t");
+    scanf("%d", &bool_save);
+    if(bool_save == 1)
+        save(map);
+    printf("\n\t\t\tGoodbye");
     getchar();
     exit(EXIT_SUCCESS);
 }
 
-void Sauvegarder(const map_S *map) {
-    FILE *f = fopen("save.sav","w+");
+void save(const struct map *map) {
+    int i, j;
+    FILE *f = fopen("save.sav", "w+");
     if(f == NULL)
         exit(0x20);
-    fprintf(f,"%2d%2d%2d\n",map->lines,map->col,map->mines);
+    fprintf(f, "%2d%2d%2d\n", map->rows, map->columns, map->mines);
 
-    for(uint i = 0; i < map->lines; ++i) {
-        for(uint j = 0; j < map->col; ++j) {
-            if(map->Map[i][j].valeur == MINE && map->Map[i][j].flagged == true)
-                fprintf(f,"-1");
-            else if(map->Map[i][j].valeur == MINE && map->Map[i][j].flagged == false)
-                fprintf(f,"-2");
-            else if(map->Map[i][j].valeur != MINE && map->Map[i][j].flagged == true)
-                fprintf(f,"9%1d", map->Map[i][j].valeur - '0');
+    for(i = 0; i < map->rows; ++i) {
+        for(j = 0; j < map->columns; ++j) {
+            if(map->Map[i][j].value == MINE && map->Map[i][j].flagged == true)
+                fprintf(f, "-1");
+            else if(map->Map[i][j].value == MINE && !map->Map[i][j].flagged)
+                fprintf(f, "-2");
+            else if(map->Map[i][j].value != MINE && map->Map[i][j].flagged == true)
+                fprintf(f, "9%c", map->Map[i][j].value);
             else
-                fprintf(f,"%2d",map->Map[i][j].valeur);
+                fprintf(f, "%2d", map->Map[i][j].value);
         }
-        fputc('\n',f);
+        fputc('\n', f);
     }
 
-    for(uint i = 0; i < map->lines; ++i) {
-        for(uint j = 0; j < map->col; ++j)
-            fprintf(f,"%d",(map->Map[i][j].visible));
-        fputc('\n',f);
+    for(i = 0; i < map->rows; ++i) {
+        for(j = 0; j < map->columns; ++j)
+            fprintf(f, "%d", (map->Map[i][j].visible));
+        fputc('\n', f);
     }
     fclose(f);
 }
 
-bool charger(map_S *map) {
-    FILE *f = fopen("save.sav","r");
+bool load(struct map *map) {
+    int i, j;
+    FILE *f = fopen("save.sav", "r");
     if(f == NULL)
         return false;
-    fscanf(f,"%2d%2d%2d\n",&map->lines, &map->col,&map->mines);
+    fscanf(f, "%2d%2d%2d\n", &map->rows, &map->columns, &map->mines);
     alloc(map);
 
-    for(uint i = 0; i < map->lines; ++i) {
-        for(uint j = 0; j < map->col; ++j) {
+    for(i = 0; i < map->rows; ++i) {
+        for(j = 0; j < map->columns; ++j) {
             int tmp;
-            fscanf(f,"%2d",&tmp);
+            fscanf(f, "%2d", &tmp);
             if(tmp == -1) {
-                map->Map[i][j].valeur = MINE;
+                map->Map[i][j].value = MINE;
                 map->Map[i][j].flagged = true;
             } else if(tmp == -2) {
-                map->Map[i][j].valeur = MINE;
+                map->Map[i][j].value = MINE;
                 map->Map[i][j].flagged = false;
             } else if(tmp / 10 == 9) {
-                map->Map[i][j].valeur = (tmp % 10) + '0';
+                map->Map[i][j].value = (tmp % 10) + '0';
                 map->Map[i][j].flagged = true;
             } else {
-                map->Map[i][j].valeur = tmp;
+                map->Map[i][j].value = tmp;
                 map->Map[i][j].flagged = false;
             }
         }
         fgetc(f);
     }
-    fscanf(f,"\n");
-    for(uint i = 0; i < map->lines; ++i) {
-        for(uint j = 0; j < map->col; ++j) {
+    fscanf(f, "\n");
+    for(i = 0; i < map->rows; ++i) {
+        for(j = 0; j < map->columns; ++j) {
             int tmp;
-            fscanf(f,"%d",&tmp);
+            fscanf(f, "%d", &tmp);
             map->Map[i][j].visible = (bool)tmp;
         }
         fgetc(f);
@@ -478,16 +391,15 @@ bool charger(map_S *map) {
     return true;
 }
 
-uint nb_unvisible(const map_S *map) {
-    uint n = 0;
-    for(uint i = 0; i < map->lines; ++i)
-        for(uint j = 0; j < map->col; ++j)
-            if(map->Map[i][j].visible == false)
+int nb_unvisible(const struct map *map) {
+    int n = 0,
+         i, j;
+    for(i = 0; i < map->rows; ++i)
+        for(j = 0; j < map->columns; ++j)
+            if(!map->Map[i][j].visible)
                 ++n;
     return n;
 }
 
-void clean(void) {
-    while(getchar()!='\n');
-}
+void purge_buffer(void) { while(getchar()!='\n'); }
 

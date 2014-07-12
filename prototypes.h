@@ -1,100 +1,100 @@
 #ifndef PROTOTYPES_H_INCLUED
 #define PROTOTYPES_H_INCLUED
-    #if defined (_WIN32) || defined (_WIN64)
-        #include <windows.h>
-    #endif
-    #define CHEAT_ALLOWED
-    #define VIDE    32
-    #define MINE    9
+# if defined (_WIN32) || defined (_WIN64)
+#  define WIN
+#  include <windows.h>
+# endif
+# define CHEAT_ALLOWED
+# define EMPTY    ' '
+# define MINE    9
 
-    typedef unsigned int uint;
+# define true 1
+# define false 0
 
-    typedef struct {
-        bool    visible,  //if(!visible) print '?'
-                flagged;
-        char    valeur; //nombre de mines aux alentours ( 9 pour MINE)
-    } Case_S;
+    typedef int bool;
 
-    typedef struct {
-        uint    lines,
-                col,
-                mines,
-                drapeaux;
-        Case_S  **Map;
-    } map_S;
+    struct cell {
+        bool visible,   /*if(!visible) print '?'*/
+             flagged;
+        char value;     /*contains the number of adjacent mines (= 9 if cell is a mine)*/
+    };
 
-    typedef struct {
-        uint    x,
-                y;
-    } Coordonnees_S;
+    struct map {
+        int rows,
+            columns,
+            mines,
+            flags;
+        struct cell  **Map;
+    };
+
+    struct coord {
+        int x, y;
+    };
 
 
-    /*Alloue la mémoire de la grille*/
-    bool alloc(map_S *map);
+    /*Allocates memory for the grid*/
+    bool alloc(struct map *map);
 
-    /*Génère les cases (VIDE || MINE)*/
-    void mapGen(map_S *map);
+    /*generates the cells (MINE or EMPTY)*/
+    void map_gen(struct map *map);
 
-    /*Pose la mine, et ajoute 1 à la valeur des cases adjacentes*/
-    void ajoutermine(map_S *map, uint x, uint y);
+    /*Sets the mine and adds 1 to each adjacent cell*/
+    void add_mine(struct map *map, int x, int y);
 
-    /*Affiche la map*/
-    void affiche_map(const map_S *map);
+	/*explicit*/
+    void display_map(const struct map *map);
 
-    /*retourne le nombre de mines adjacentes*/
-    char numb_adj_mines(const map_S *map, uint i, uint j);
+    /*explicit*/
+    void fill_map(struct map *map);
 
-    /*remplit la structure map*/
-    void fillmap(map_S *map);
+    /*asks and handles what action to do*/
+    void action(struct map *map);
 
-    /*demande à l'utilisateur l'action à faire*/
-    void action(map_S *map);
+    /*explicit*/
+    void abandon(void) __attribute__((noreturn));
 
-    /*Dit au revoir et quitte*/
-    void Abandon(void);
+    /*explicit*/
+    void flag(struct map *map);
 
-    /*Pose un drapeau*/
-    void Flag(map_S *map);
+    /*explicit*/
+    void unflag(struct map *map);
 
-    /*Enlève un drapeau*/
-    void Unflag(map_S *map);
+    /*asks the cell to explore with explore_cell*/
+    void explore(struct map *map);
 
-    /*demande la case à explorer et l'envoie à Explore2();*/
-    void Explore(map_S *map);
+    /*explores a cell and its adjacents to check for bombs and EMPTY-cells*/
+    void explore_cell(struct map *map, int x, int y);
 
-    /*Explore une case pour voir s'il y a une bombe*/
-    void Explore2(map_S *map, uint x, uint y);
+    /*asks a (X,Y) value*/
+    void get_coord(struct coord *coord, const struct map *map);
 
-    /*Renvoie une valeur de x && de y*/
-    void getCoord(Coordonnees_S *coord, const map_S *map);
+    /*explicit*/
+    void display_map_debug(const struct map *map);
 
-    /*Affiche la carte entièrement résolue*/
-    void affiche_map_Debug(const map_S *map);
+# if defined WIN
+    /*sets a color for console text writing*/
+    void color(int flags);
 
-#if defined _WIN32 || defined _WIN64
-    /*Change la couleur du texte à afficher dans la console*/
-    void Color(int flags);
+    /*explicit*/
+    void reset_color(void);
+# endif
 
-    /*Remet la couleur d'écriture en blanc*/
-    void ResetColor(void);
+    /*returns true if every mine is discovered*/
+    bool iswon(const struct map *map);
+
+    /*ask if user wants to save and then leaves*/
+    void quit(const struct map *map) __attribute__((noreturn));
+
+    /*explicit*/
+    void save(const struct map *map);
+
+    /*explicit*/
+    bool load(struct map *map);
+
+    /*explicit*/
+    void purge_buffer(void);
+
+    /*explicit*/
+    int nb_unvisible(const struct map *map);
+
 #endif
-
-    /*renvoie true si toutes les mines ont un drapeau*/
-    bool gagne(const map_S *map);
-
-    /*Demande si l'utilisateur veut sauvegarder et quitte*/
-    void Quit(const map_S *map);
-
-    /*Sauvegarde la partie dans un fichier*/
-    void Sauvegarder(const map_S *map);
-
-    /*charge la sauvegarde save.sav*/
-    bool charger(map_S *map);
-
-    /*nettoie le buffer*/
-    void clean(void);
-
-    /*retroune le nombre de case cachées sur la carte*/
-    uint nb_unvisible(const map_S *map);
-
-#endif //PROTOTYPES_H_INCLUED
